@@ -4,7 +4,7 @@ Surfaces registered here:
 * seven ``obol_*`` tools (create, send, get, list, remind, void, and draft-from-message);
 * a ``pre_tool_call`` hook that routes every money-touching call through Hermes's approval gate;
 * the ``/invoices`` slash command (CLI, TUI, Desktop and every messaging platform);
-* the ``hermes obol`` CLI (doctor, sync, ledger);
+* the ``obol`` CLI subcommand (doctor, sync, ledger);
 * an "overdue invoice chase" automation blueprint and a bundled ``obol:invoicing`` skill.
 """
 
@@ -56,11 +56,22 @@ def _run(op: Callable[[dict], dict], args: dict) -> str:
 
 # -- approval gate ------------------------------------------------------------------------------
 def _unattended(ctx: Any) -> bool:
+    """True when no person can approve: a cron run (including a subagent it delegated to, which
+    ``current_cron_execution`` hides) or an engine-marked cron session. Fails closed."""
     current = getattr(ctx, "current_cron_execution", None)
     try:
-        return current is not None and current() is not None
+        if current is not None and current() is not None:
+            return True
     except Exception:
         return True  # cannot tell: treat as unattended (fail closed)
+    try:
+        from tools.approval_context import _is_cron_approval_context
+    except ImportError:
+        return current is None  # an engine without either signal cannot prove a person is present
+    try:
+        return bool(_is_cron_approval_context())
+    except Exception:
+        return True
 
 
 def _make_gate(ctx: Any) -> Callable[..., Any]:
@@ -218,7 +229,7 @@ def _llm_extractor(ctx: Any, sleep: Callable[[float], None] | None = None) -> Ca
     def extract(instructions: str, text: str) -> Any:
         llm = getattr(ctx, "llm", None)
         if llm is None:
-            raise LlmUnavailable("This Hermes has no plugin LLM access (ctx.llm).")
+            raise LlmUnavailable("Drafting from a message is not available here (no model access for plugins).")
         last: Exception | None = None
         for attempt in range(2):
             try:
@@ -275,7 +286,6 @@ def _cli_setup(subparser: Any) -> None:
     subs.add_parser("doctor", help="Check the Stripe key, mode and connectivity")
     subs.add_parser("sync", help="Pull recent invoices from Stripe into the local ledger")
     subs.add_parser("ledger", help="Print the local ledger")
-    subs.add_parser("demo", help="Fill a Stripe TEST account with sample clients and invoices to try Obol")
 
 
 def _make_cli(ctx: Any) -> Callable[[Any], int]:
@@ -285,8 +295,6 @@ def _make_cli(ctx: Any) -> Callable[[Any], int]:
         if cmd == "ledger":
             print(service.ledger_text(runtime.store()))
             return 0
-        if cmd == "demo":
-            return _run_demo(settings)
         status = 0
         bank = settings.provider == "bank_transfer"
         key = None if bank else runtime.api_key()
@@ -299,6 +307,7 @@ def _make_cli(ctx: Any) -> Callable[[Any], int]:
         else:
             print(f"Payment key: {mode}" + ("" if mode in ("test", "live") else
                   f" (Stripe key not set: set {runtime.KEY_ENV}, or use provider: bank_transfer)" if mode == "missing"
+                  else " (refused: use a restricted rk_live_ key, never sk_live_)" if mode == "live_secret"
                   else f" (set {runtime.KEY_ENV})"))
         print(f"Approval: every invoice write asks · live mode allowed: {settings.allow_live}")
         for table, label in (("events", "Activity log"), ("security_events", "Security log")):
@@ -323,26 +332,6 @@ def _make_cli(ctx: Any) -> Callable[[Any], int]:
     return run
 
 
-def _run_demo(settings: service.Settings) -> int:
-    from .src.obol_lib import demo_seed
-    if key_mode(runtime.api_key()) != "test":
-        print(f"✗ `hermes obol demo` needs a Stripe TEST key (sk_test_…) in {runtime.KEY_ENV}. It never touches live data.")
-        return 1
-    try:
-        with runtime.make_client(settings) as client:
-            demo_seed.seed(client)
-            service.sync(client, runtime.store())
-    except StripeError as exc:
-        print(f"✗ {exc}")
-        return 1
-    print()
-    print(service.ledger_text(runtime.store(), limit=0, **service.scope("test")))
-    print()
-    print(demo_seed.TRY)
-    runtime.store().log("demo_seeded", None, "sample clients and invoices (test mode)")
-    return 0
-
-
 # -- register -----------------------------------------------------------------------------------
 def register(ctx: Any) -> None:
     handlers = _tool_handlers(ctx)
@@ -352,7 +341,7 @@ def register(ctx: Any) -> None:
     ctx.register_hook("pre_tool_call", _make_gate(ctx))
     ctx.register_command("invoices", _make_command(ctx), description="Obol receivables ledger",
                          args_hint="[open|overdue|paid|draft|sync]")
-    ctx.register_cli_command(name="obol", help="Obol invoicing: doctor, sync, ledger, demo",
+    ctx.register_cli_command(name="obol", help="Obol invoicing: doctor, sync, ledger",
                              setup_fn=_cli_setup, handler_fn=_make_cli(ctx))
     skill = _PLUGIN_DIR / "skills" / "invoicing" / "SKILL.md"
     if skill.exists():

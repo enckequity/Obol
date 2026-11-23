@@ -11,10 +11,9 @@ from typing import Any, Callable, Mapping, Optional
 
 from .service import Settings
 from .store import Store
-from .stripe_client import StripeClient
+from .stripe_client import KEY_ENV, StripeClient
 
 PLUGIN_NAME = "obol"
-KEY_ENV = "STRIPE_API_KEY"
 
 _stores: dict[str, Store] = {}
 _stores_lock = threading.Lock()
@@ -69,7 +68,9 @@ def settings_from_config(config: Mapping[str, Any]) -> Settings:
 
 
 def api_key() -> Optional[str]:
-    from agent.secret_scope import get_secret  # Hermes's profile-aware credential route
+    """This workspace's own restricted Stripe key, read only through the engine's profile-scoped
+    secret route (never the process environment directly, never a shared/generic ``STRIPE_API_KEY``)."""
+    from agent.secret_scope import get_secret
     return get_secret(KEY_ENV)
 
 

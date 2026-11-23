@@ -83,25 +83,16 @@ same, and if your own payout details change, the next invoice's approval says so
 
 ## Quick start
 
-1. Get a **test** secret key (`sk_test_…`) from a free Stripe account in test mode. Skip this for bank-transfer
+1. Get a **test** restricted key (`rk_test_…`, or a `sk_test_…` secret key) from a free Stripe account in test mode. Skip this for bank-transfer
    mode, which needs no key.
 2. Install and check:
 
    ```bash
    hermes plugins install ueddy/obol
    hermes plugins enable obol
-   hermes config set STRIPE_API_KEY sk_test_…   # Stripe mode only
+   hermes config set OBOL_STRIPE_RESTRICTED_KEY rk_test_…   # Stripe mode only
    hermes obol doctor                    # key mode, provider reachable, log integrity
    ```
-
-3. Fill the test account with sample clients (about 40 seconds; test keys only, re-run anytime):
-
-   ```bash
-   hermes obol demo
-   ```
-
-   It creates paid, open and overdue invoices with real past dates and prints four things to try: forward a client's
-   message, "have they paid?", a lookalike-address scam, and paying with test card `4242 4242 4242 4242`.
 
 No Stripe account? Use bank-transfer mode instead (see [Configure](#configure)); `hermes obol doctor` then
 checks your bank details.
@@ -110,14 +101,15 @@ Requires Hermes Agent 0.22+. No extra Python dependencies.
 
 ## Going live
 
-Out of the box Obol refuses live Stripe keys (`sk_live_…`, `rk_live_…`), both in the provider client and again in
-the approval hook. Once you turn live mode on, it runs exactly the same code as test mode: the same Stripe calls,
+Out of the box Obol refuses live Stripe keys, both in the provider client and again in the approval hook. Live
+mode needs both `allow_live: true` and a restricted live key (`rk_live_…`); a full live secret key (`sk_live_…`) is
+always refused. Once you turn live mode on, it runs exactly the same code as test mode: the same Stripe calls,
 the same approval prompts, the same scam checks. Bank-transfer mode needs no Stripe key, so none of this applies
 to it.
 
 1. **Activate your Stripe account.** Stripe won't accept live invoices until the account is activated (business
    details and a payout bank account). That happens on Stripe's side, not in Obol.
-2. **Use a restricted key.** A restricted key (`rk_live_…`) is safer than a full secret key. Create one in the
+2. **Use a restricted key.** Obol only accepts a restricted live key (`rk_live_…`), never a full secret key. Create one in the
    Stripe dashboard with only what Obol uses:
 
    | Resource | Access |
@@ -131,7 +123,7 @@ to it.
 3. **Set the key and allow live mode:**
 
    ```bash
-   hermes config set STRIPE_API_KEY rk_live_…
+   hermes config set OBOL_STRIPE_RESTRICTED_KEY rk_live_…
    hermes config set plugins.entries.obol.settings.allow_live true
    hermes obol doctor                    # should report live mode and Stripe reachable
    ```
@@ -145,14 +137,12 @@ to it.
 > a live key, approving a send or a reminder makes Stripe email the actual customer, so one approval puts a real
 > email in front of a real person. The approval prompt says so too; read the recipient before you approve.
 
-Two things stay test-only on purpose: `hermes obol demo` refuses anything but a test key, and syncing invoices from
-Stripe test clocks only exists in test mode.
+Syncing invoices from Stripe test clocks only exists in test mode.
 
 ## For judges
 
 | Check | How |
 |---|---|
-| Try it in two minutes | `hermes obol demo` with a Stripe test key: sample clients, then four prompts to try |
 | Installs cleanly | `hermes plugins validate . --install-deps && hermes plugins doctor . --ci` → 8 tools, 1 hook, install scan **safe** |
 | Tests | `python -m pytest`: 231 tests, no keys needed (unit, adversarial, recorded real responses, gateway, Hermes integration) |
 | Claims are proven | `tests/test_readme_claims.py` fails if any test named in this README doesn't exist |
@@ -234,7 +224,7 @@ Injection detection is always on.
 - **Network:** the payment provider's API only (today `api.stripe.com`), over HTTPS: when a tool, `/invoices sync` or `hermes obol doctor|sync` runs; in the approval hook before a write (5-second timeout); during sync for fraud-risk and dispute reads (read-only); every 45 s while the dashboard tab is open. Polling only; no webhooks, no open ports. In bank-transfer mode Obol makes no network calls at all.
 - **Your model:** `obol_draft_from_message` sends the forwarded message to the model Hermes is configured to use, through `ctx.llm`.
 - **Emails:** sending and reminding make the payment provider email your client. In bank-transfer mode nobody is emailed; PDFs are written to `<HERMES_HOME>/plugin-data/obol/invoices/`.
-- **Credentials:** `STRIPE_API_KEY` (optional, Stripe mode only; install doesn't ask for it), read only through Hermes's secret route; never logged or stored. Without it, Stripe-mode tools answer "Stripe key not set" and do nothing.
+- **Credentials:** `OBOL_STRIPE_RESTRICTED_KEY` (optional, Stripe mode only; install doesn't ask for it), read only through Hermes's secret route; never logged or stored. Without it, Stripe-mode tools answer "Stripe key not set" and do nothing.
 - **Local data:** `<HERMES_HOME>/plugin-data/obol/data.db`: cached invoice metadata, risk findings, and hash-chained activity and security logs (forwarded message text is not stored). Delete the file to clear it. Bank-transfer details (account name, number, bank, routing) are plugin settings, stored in plain text in Hermes's `config.yaml`. The full number appears only there and on the PDFs: Obol's logs and database hold a fingerprint of the details and the account's last four digits, never the number itself.
 - **No telemetry, shell commands, background processes or self-updating code.**
 

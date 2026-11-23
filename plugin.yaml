@@ -1,6 +1,6 @@
 name: obol
-version: 0.1.1
-description: "Safe invoicing for freelancers, consultants and agencies who bill clients, from any chat Hermes runs in. Hermes drafts invoices (also from forwarded messages), sends them as Stripe payment links or as bank-transfer PDF invoices with no provider account, and tracks who has paid. Every invoice write needs your approval, with checks for prompt injection, lookalike and impersonated client addresses, duplicates, unusual amounts and changed payout details, plus hash-chained logs. Test mode by default."
+version: 0.1.1+teamshift.1
+description: "Safe invoicing for freelancers, consultants and agencies who bill clients, from any chat. The assistant drafts invoices (also from forwarded messages), sends them as Stripe payment links or as bank-transfer PDF invoices with no provider account, and tracks who has paid. Every invoice write needs your approval, with checks for prompt injection, lookalike and impersonated client addresses, duplicates, unusual amounts and changed payout details, plus hash-chained logs. Test mode by default."
 author: UEddy
 requires_hermes: ">=0.22"
 provides_tools:
@@ -15,22 +15,24 @@ provides_tools:
 provides_hooks:
   - pre_tool_call
 # Optional: only Stripe mode uses it. Bank-transfer mode (provider: bank_transfer) needs no key.
+# Each workspace sets its OWN restricted key; it is read only through the engine's profile-scoped
+# secret route. A full live secret key (sk_live_) is always refused.
 optional_env:
-  - name: STRIPE_API_KEY
-    description: "Stripe secret or restricted key, for Stripe mode only. Use a TEST key (sk_test_...) unless you have turned on allow_live."
-    url: "https://dashboard.stripe.com/test/apikeys"
+  - name: OBOL_STRIPE_RESTRICTED_KEY
+    description: "This workspace's own Stripe restricted key, for Stripe mode only. rk_test_ (or sk_test_) to try it; rk_live_ for real invoices, and only when allow_live is on. sk_live_ keys are refused."
+    url: "https://dashboard.stripe.com/apikeys"
     secret: true
 config_schema:
   stripe_api_key:
     type: secret
-    env: STRIPE_API_KEY
-    label: "Stripe API key"
-    description: "Test key (sk_test_...) recommended. Stored in Hermes's .env, never in config.yaml."
+    env: OBOL_STRIPE_RESTRICTED_KEY
+    label: "Stripe restricted key"
+    description: "This workspace's own restricted key (rk_test_... or rk_live_...). Stored with the workspace's secrets, never in config.yaml. Full sk_live_ keys are refused."
   allow_live:
     type: bool
     default: false
     label: "Allow live mode"
-    description: "Off: live Stripe keys are refused, so no real customer is ever billed."
+    description: "Off: live Stripe keys are refused, so no real customer is ever billed. On: a restricted live key (rk_live_) is accepted; a full sk_live_ key never is."
   default_currency:
     type: str
     default: usd

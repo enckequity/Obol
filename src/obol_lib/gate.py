@@ -1,9 +1,10 @@
 """The approval policy behind Obol's ``pre_tool_call`` hook, as a pure function.
 
 Rules (every one of them fails closed):
-* Every tool that writes to Stripe (create, send, remind, void) is escalated to Hermes's
+* Every tool that writes to Stripe (create, send, remind, void) is escalated to the engine's
   human-approval prompt. There is no setting that turns this off.
-* A live key is refused outright unless ``allow_live`` is true.
+* Live mode needs both ``allow_live`` and a restricted live key (``rk_live_``); a full
+  ``sk_live_`` secret key is refused outright.
 * In an unattended run (cron) nobody can approve, so the call is blocked with a clear
   message instead of being left to an approval mode that might auto-approve.
 * Each approval gets its own ``rule_key``, so answering "always" once can never pre-approve
@@ -16,6 +17,7 @@ import uuid
 from typing import Any, Callable, Optional
 
 from . import money
+from .stripe_client import KEY_ENV, LIVE_SECRET_REFUSED
 
 WRITE_TOOLS = frozenset({"obol_create_invoice", "obol_send_invoice", "obol_send_reminder", "obol_void_invoice",
                          "obol_mark_paid"})
@@ -58,11 +60,11 @@ def describe_existing(tool_name: str, invoice_id: str, row: Optional[dict], bank
 
 
 def format_flags(flags: list[dict]) -> str:
-    """Flags for an approval prompt: one headline each, so they fit Hermes's prompt box. The full detail of
-    every flag is in the Security tab and ``hermes obol ledger``."""
+    """Flags for an approval prompt: one headline each, so they fit the approval prompt. The full detail of
+    every flag is kept in Obol's security log."""
     if not flags:
         return "Risk checks: none raised."
-    lines = ["RISK CHECKS (details: Security tab):"]
+    lines = ["RISK CHECKS:"]
     for f in flags:
         text = f.get("short") or str(f.get("message"))
         if len(text) > 110:
@@ -76,9 +78,11 @@ def decide(tool_name: str, args: dict, *, mode: str, allow_live: bool, unattende
     """Return a pre_tool_call directive, or None to let a read-only call through."""
     if tool_name not in WRITE_TOOLS:
         return None
+    if mode == "live_secret":
+        return {"action": "block", "message": f"Obol refused: {LIVE_SECRET_REFUSED}"}
     if mode == "live" and not allow_live:
         return {"action": "block", "message": (
-            "Obol refused: STRIPE_API_KEY is a LIVE key and live mode is off "
+            f"Obol refused: {KEY_ENV} is a LIVE key and live mode is off "
             "(plugins.entries.obol.settings.allow_live). Nothing was sent.")}
     if unattended:
         return {"action": "block", "message": (

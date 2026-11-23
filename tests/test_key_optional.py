@@ -1,4 +1,4 @@
-"""STRIPE_API_KEY is optional: bank-transfer users are never asked for it, and Stripe mode without it answers
+"""OBOL_STRIPE_RESTRICTED_KEY is optional: bank-transfer users are never asked for it, and Stripe mode without it answers
 "Stripe key not set" from every surface (tools, the approval hook, /invoices, the doctor) instead of crashing.
 
 Each mode is checked with and without the key, through Hermes's real plugin manager.
@@ -33,12 +33,12 @@ CREATE = {"customer_email": "billing@acmestudio.example.com", "customer_name": "
 
 @contextlib.contextmanager
 def no_key():
-    saved = os.environ.pop("STRIPE_API_KEY", None)
+    saved = os.environ.pop("OBOL_STRIPE_RESTRICTED_KEY", None)
     try:
         yield
     finally:
         if saved is not None:
-            os.environ["STRIPE_API_KEY"] = saved
+            os.environ["OBOL_STRIPE_RESTRICTED_KEY"] = saved
 
 
 @contextlib.contextmanager
@@ -83,11 +83,11 @@ def test_install_never_asks_for_the_stripe_key():
     yaml = YAML(typ="safe")
     manifest = yaml.load((ROOT / "plugin.yaml").read_text())
     assert not manifest.get("requires_env")
-    assert [e["name"] for e in manifest["optional_env"]] == ["STRIPE_API_KEY"]
+    assert [e["name"] for e in manifest["optional_env"]] == ["OBOL_STRIPE_RESTRICTED_KEY"]
     with no_key():
         assert _missing_env_specs(manifest) == []                 # the install prompt has nothing to ask
     assert manifest["config_schema"]["stripe_api_key"] == {**manifest["config_schema"]["stripe_api_key"],
-                                                          "type": "secret", "env": "STRIPE_API_KEY"}
+                                                          "type": "secret", "env": "OBOL_STRIPE_RESTRICTED_KEY"}
     catalog = yaml.load((ROOT / "catalog" / "obol.yaml").read_text())
     assert catalog["capabilities"]["requires_env"] == []
 
@@ -113,7 +113,7 @@ def test_stripe_mode_without_key_hook_slash_command_and_doctor(hermes, fake, cap
 
 
 def test_stripe_mode_with_key_still_works(hermes, fake, capsys):
-    assert os.environ.get("STRIPE_API_KEY", "").startswith("sk_test_")
+    assert os.environ.get("OBOL_STRIPE_RESTRICTED_KEY", "").startswith("sk_test_")
     assert _hook("obol_create_invoice", dict(CREATE))["action"] == "approve"
     out = call("obol_create_invoice", dict(CREATE))
     assert out["invoice"]["status"] == "open" and out["payment_link"]
@@ -138,7 +138,7 @@ def test_bank_mode_without_key_issues_marks_paid_and_reports(hermes, fake, capsy
 
 
 def test_bank_mode_with_key_ignores_stripe(hermes, fake):
-    assert os.environ.get("STRIPE_API_KEY")
+    assert os.environ.get("OBOL_STRIPE_RESTRICTED_KEY")
     with bank_mode():
         out = call("obol_create_invoice", dict(CREATE))
         listed = call("obol_list_invoices", {})
