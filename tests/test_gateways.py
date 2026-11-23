@@ -43,7 +43,7 @@ def gateway_session(monkeypatch):
     approval._gateway_queues.clear()
     approval._gateway_notify_cbs.clear()
     approval._session_approved.clear()
-    approval._pending.clear()
+    getattr(approval, "_pending", {}).clear()  # gone in newer Hermes (queues hold pending entries)
 
     def bind(platform: str, key: str):
         monkeypatch.setenv("HERMES_GATEWAY_SESSION", "1")
