@@ -65,11 +65,11 @@ def _unattended(ctx: Any) -> bool:
     except Exception:
         return True  # cannot tell: treat as unattended (fail closed)
     try:
-        from tools.approval_context import _is_cron_approval_context
+        from gateway.session_context import get_session_env  # the session-scoped marker cron binds
     except ImportError:
         return current is None  # an engine without either signal cannot prove a person is present
     try:
-        return bool(_is_cron_approval_context())
+        return str(get_session_env("HERMES_CRON_SESSION", "") or "").strip().lower() in ("1", "true", "yes", "on")
     except Exception:
         return True
 
