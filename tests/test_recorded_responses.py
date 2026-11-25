@@ -31,8 +31,13 @@ def test_record_replay_machinery_roundtrip(fake):
 
 
 @needs_recording
-def test_replay_matches_recording():
+def test_replay_matches_recording(monkeypatch):
     data = json.loads(FIXTURE.read_text())
+    # The recording has a fixed due date; view it as of when it was recorded, not today.
+    import obol_lib.store as store_mod
+    created = min(int(o["created"]) for ex in data["exchanges"] for o in [ex.get("body") or {}]
+                  if isinstance(o, dict) and isinstance(o.get("created"), int))
+    monkeypatch.setattr(store_mod.time, "time", lambda: float(created + 60))
     assert data["source"] == "Stripe test mode"
     replay = ReplayTransport(data["exchanges"])
     seen: dict[str, object] = {}

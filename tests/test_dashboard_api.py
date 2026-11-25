@@ -70,7 +70,7 @@ def test_bad_status_is_400(api):
 def test_sync_errors_are_reported(api, fake, monkeypatch):
     monkeypatch.setattr(runtime, "api_key", lambda: None)
     r = api.post("/api/plugins/obol/sync")
-    assert r.status_code == 400 and "STRIPE_API_KEY" in r.json()["detail"]
+    assert r.status_code == 400 and "OBOL_STRIPE_RESTRICTED_KEY" in r.json()["detail"]
     monkeypatch.setattr(runtime, "api_key", lambda: "sk_test_dash")
     fake.timeout_queue.extend(["/v1/invoices"] * 3)
     r = api.post("/api/plugins/obol/sync")

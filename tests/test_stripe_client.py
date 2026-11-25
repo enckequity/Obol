@@ -9,11 +9,12 @@ def test_key_mode():
     assert key_mode("") == "missing"
     assert key_mode("sk_test_abc") == "test"
     assert key_mode("rk_live_abc") == "live"
+    assert key_mode("sk_live_abc") == "live_secret"
     assert key_mode("pk_test_abc") == "invalid"
 
 
 @pytest.mark.parametrize("key,kind", [(None, "not_configured"), ("pk_test_x", "not_configured"),
-                                      ("sk_live_x", "live_blocked")])
+                                      ("rk_live_x", "live_blocked"), ("sk_live_x", "live_secret_refused")])
 def test_client_refuses_bad_keys(key, kind):
     with pytest.raises(StripeError) as exc:
         StripeClient(key)
@@ -21,7 +22,7 @@ def test_client_refuses_bad_keys(key, kind):
 
 
 def test_live_key_allowed_only_when_opted_in():
-    c = StripeClient("sk_live_x", allow_live=True)
+    c = StripeClient("rk_live_x", allow_live=True)
     assert c.mode == "live"
     c.close()
 

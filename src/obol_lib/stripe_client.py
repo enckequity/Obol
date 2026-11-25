@@ -5,7 +5,7 @@ Reliability rules:
   followed by a retry can never create a second invoice or send a second email;
 * 429 / 5xx / connection errors retry with exponential backoff (bounded);
 * the API version is pinned so Stripe-side defaults cannot change under us;
-* live keys are refused unless the operator explicitly allowed live mode.
+* live mode needs both allow_live and a restricted live key (rk_live_); a full sk_live_ key is always refused.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import httpx
 
 API_BASE = "https://api.stripe.com"
 API_VERSION = "2024-06-20"
-USER_AGENT = "obol-hermes-plugin/0.1"
+USER_AGENT = "obol/0.1"
 
 _RETRY_STATUSES = frozenset({409, 429, 500, 502, 503, 504})
 _KEY_RE = re.compile(r"\b(sk|rk|pk|whsec)_(test|live)?_?[A-Za-z0-9*]{4,}")
@@ -47,16 +47,32 @@ class StripeError(Exception):
         return out
 
 
+KEY_ENV = "OBOL_STRIPE_RESTRICTED_KEY"
+
+
 def key_mode(key: Optional[str]) -> str:
-    """``'test'`` / ``'live'`` / ``'missing'`` / ``'invalid'`` from a secret or restricted key."""
+    """``'test'`` / ``'live'`` / ``'live_secret'`` / ``'missing'`` / ``'invalid'``.
+
+    ``live`` is only a *restricted* live key (``rk_live_``). A full live secret key (``sk_live_``)
+    is ``live_secret`` and is always refused: it can do anything on the account, so a workspace
+    must give Obol a restricted key scoped to invoices and customers instead.
+    """
     if not key:
         return "missing"
     key = key.strip()
     if key.startswith(("sk_test_", "rk_test_")):
         return "test"
-    if key.startswith(("sk_live_", "rk_live_")):
+    if key.startswith("rk_live_"):
         return "live"
+    if key.startswith("sk_live_"):
+        return "live_secret"
     return "invalid"
+
+
+LIVE_SECRET_REFUSED = (
+    f"{KEY_ENV} is a full live secret key (sk_live_...). Obol never uses one, so nothing was sent. "
+    "Create a restricted key (rk_live_...) in Stripe with write access to Invoices, Invoice items and "
+    "Customers and read access to Charges, Disputes and Events, and use that instead.")
 
 
 def encode_form(data: Mapping[str, Any], prefix: str = "") -> list[tuple[str, str]]:
@@ -92,17 +108,19 @@ class StripeClient:
         mode = key_mode(api_key)
         if mode == "missing":
             raise StripeError(
-                "Stripe key not set. Set STRIPE_API_KEY to a test key (sk_test_...) from "
-                "https://dashboard.stripe.com/test/apikeys (`hermes config set` or the plugin's settings "
-                "page), then retry. No Stripe account? Set provider: bank_transfer to issue PDF invoices "
-                "paid by bank transfer instead.", kind="not_configured")
+                f"Stripe key not set. Set {KEY_ENV} to this workspace's own restricted key (rk_test_... to "
+                "try it, rk_live_... for real invoices) in the plugin's settings, then retry. No Stripe "
+                "account? Set provider: bank_transfer to issue PDF invoices paid by bank transfer instead.",
+                kind="not_configured")
         if mode == "invalid":
-            raise StripeError("STRIPE_API_KEY does not look like a Stripe secret or restricted key "
-                              "(expected sk_test_/rk_test_/sk_live_/rk_live_).", kind="not_configured")
+            raise StripeError(f"{KEY_ENV} does not look like a Stripe restricted or test key "
+                              "(expected rk_live_/rk_test_/sk_test_).", kind="not_configured")
+        if mode == "live_secret":
+            raise StripeError(LIVE_SECRET_REFUSED, kind="live_secret_refused")
         if mode == "live" and not allow_live:
             raise StripeError(
                 "This is a LIVE key and live mode is off, so nothing was sent. Obol only moves real money "
-                "when plugins.entries.obol.settings.allow_live is true; use a test key for demos.",
+                "when plugins.entries.obol.settings.allow_live is true; use a test key to try it.",
                 kind="live_blocked")
         self.mode = mode
         self._max_retries = max(0, int(max_retries))
@@ -175,7 +193,7 @@ class StripeClient:
         kind = {401: "auth", 403: "permission", 404: "not_found", 429: "rate_limited"}.get(
             resp.status_code, "invalid_request" if resp.status_code == 400 else "api_error")
         if kind == "auth":
-            message = "Stripe rejected the API key (401). Check STRIPE_API_KEY."
+            message = f"Stripe rejected the API key (401). Check {KEY_ENV}."
         raise StripeError(redact(str(message)), kind=kind, status=resp.status_code,
                           code=err.get("code"), param=err.get("param"))
 

@@ -27,9 +27,9 @@ def hermes(tmp_path_factory):
     (home / "config.yaml").write_text(
         "plugins:\n  enabled: [obol]\n  isolation: in_process\n"
         "  entries:\n    obol:\n      settings:\n        default_currency: usd\n")
-    old = {k: os.environ.get(k) for k in ("HERMES_HOME", "STRIPE_API_KEY")}
+    old = {k: os.environ.get(k) for k in ("HERMES_HOME", "OBOL_STRIPE_RESTRICTED_KEY")}
     os.environ["HERMES_HOME"] = str(home)
-    os.environ["STRIPE_API_KEY"] = "sk_test_integration"
+    os.environ["OBOL_STRIPE_RESTRICTED_KEY"] = "sk_test_integration"
     from hermes_cli.plugins import _reset_plugin_managers_for_tests, discover_plugins, get_plugin_manager
     _reset_plugin_managers_for_tests()          # clean slate: other test modules load their own Hermes homes
     discover_plugins(force=True)
@@ -90,12 +90,12 @@ def test_errors_are_json_not_exceptions(hermes, fake):
 
 
 def test_missing_key_message(hermes, fake):
-    os.environ.pop("STRIPE_API_KEY")
+    os.environ.pop("OBOL_STRIPE_RESTRICTED_KEY")
     try:
         out = call("obol_list_invoices", {})
-        assert out["kind"] == "not_configured" and "STRIPE_API_KEY" in out["error"]
+        assert out["kind"] == "not_configured" and "OBOL_STRIPE_RESTRICTED_KEY" in out["error"]
     finally:
-        os.environ["STRIPE_API_KEY"] = "sk_test_integration"
+        os.environ["OBOL_STRIPE_RESTRICTED_KEY"] = "sk_test_integration"
 
 
 def _directive(**kw):
@@ -127,12 +127,12 @@ def test_other_plugins_tools_are_left_alone(hermes, fake):
 
 
 def test_live_key_blocked_by_hook(hermes, fake):
-    os.environ["STRIPE_API_KEY"] = "sk_live_should_never_be_used"
+    os.environ["OBOL_STRIPE_RESTRICTED_KEY"] = "rk_live_should_never_be_used"
     try:
         d = _directive(tool_name="obol_send_invoice", args={"invoice_id": "in_1Abcdef"})
         assert d["action"] == "block" and "LIVE" in d["message"]
     finally:
-        os.environ["STRIPE_API_KEY"] = "sk_test_integration"
+        os.environ["OBOL_STRIPE_RESTRICTED_KEY"] = "sk_test_integration"
 
 
 def test_cron_detection_fails_closed():

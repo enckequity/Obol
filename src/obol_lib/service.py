@@ -356,7 +356,7 @@ def ledger_text(store: Store, *, livemode: Optional[bool] = None, bank: Optional
     totals = store.summary(livemode=livemode, bank=bank)
     lines = ["OBOL LEDGER" + (" (BANK TRANSFER)" if bank else " (TEST MODE)" if livemode is False else "")]
     if not totals:
-        lines.append("No invoices yet. Ask Hermes to invoice someone, or run /invoices sync.")
+        lines.append("No invoices yet. Ask me to invoice someone, or run /invoices sync.")
         return "\n".join(lines)
     # Short lines (under ~42 characters) so the ledger reads in a phone chat without wrapping mid-number.
     for cur, t in sorted(totals.items()):

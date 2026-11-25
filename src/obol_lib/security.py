@@ -105,7 +105,7 @@ _PATTERNS: list[tuple[str, str]] = [
 _COMPILED = [(name, re.compile(rx, re.I)) for name, rx in _PATTERNS]
 _SEVERITY = {"redirect": "medium"}  # everything else is high
 _LABELS = {
-    "override": "tries to override Hermes's instructions",
+    "override": "tries to override the assistant's instructions",
     "role": "tries to change the assistant's role",
     "skip_approval": "asks to skip approval or checks",
     "auto_send": "asks to send or pay without confirmation",
