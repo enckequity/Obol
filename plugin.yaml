@@ -33,6 +33,16 @@ config_schema:
     default: false
     label: "Allow live mode"
     description: "Off: live Stripe keys are refused, so no real customer is ever billed. On: a restricted live key (rk_live_) is accepted; a full sk_live_ key never is."
+  restrict_commands:
+    type: bool
+    default: false
+    label: "Restrict /invoices"
+    description: "On: /invoices answers only a local session or a messaging sender listed in command_senders."
+  command_senders:
+    type: list
+    default: []
+    label: "Senders allowed /invoices"
+    description: "platform:user_id entries that may run /invoices when restrict_commands is on."
   default_currency:
     type: str
     default: usd

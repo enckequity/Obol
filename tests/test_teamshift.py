@@ -237,3 +237,57 @@ def test_engine_resolves_the_approve_directive_with_obols_rule_key(hermes, fake,
         assert resolve_pre_tool_block("obol_send_invoice", {"invoice_id": "in_1Abcdef"}, task_id="t")
     assert len(seen) == 2 and seen[0] != seen[1] and all(k.startswith("obol:obol_send_invoice:") for k in seen)
     assert not [c for c in fake.calls if c[0] == "POST"]
+
+
+# -- 5. /invoices sender check (TeamShift customers: restrict_commands true) ----------------------
+class _Src:
+    def __init__(self, platform, user_id):
+        self.platform, self.user_id = platform, user_id
+
+
+def _getter(**settings):
+    return lambda k, d: settings.get(k, d)
+
+
+def test_invoices_is_open_unless_restricted():
+    from obol_lib import runtime
+    assert runtime.command_allowed(_getter(), {"platform": "sms", "source": _Src("sms", "+15550100")})
+    assert runtime.command_allowed(_getter(restrict_commands=False), {})
+
+
+@pytest.mark.parametrize("ctx", [
+    {},                                                               # no calling context
+    {"platform": "sms", "source": _Src("sms", "+15550100")},          # unlisted messaging sender
+    {"platform": "telegram", "source": _Src("telegram", "")},         # no user id
+    {"platform": "sms", "source": _Src("local", "x")},                # local source on a messaging platform
+])
+def test_restrict_commands_refuses_unlisted_and_contextless_callers(ctx):
+    from obol_lib import runtime
+    assert not runtime.command_allowed(_getter(restrict_commands=True, command_senders=["sms:+15550199"]), ctx)
+
+
+@pytest.mark.parametrize("ctx", [
+    {"platform": "cli"},
+    {"platform": "desktop", "source": _Src("local", "")},
+    {"platform": "sms", "source": _Src("SMS", "+15550199")},
+])
+def test_restrict_commands_admits_local_sessions_and_listed_senders(ctx):
+    from obol_lib import runtime
+    assert runtime.command_allowed(_getter(restrict_commands=True, command_senders="sms:+15550199, slack:U1"), ctx)
+
+
+def test_unreadable_restrict_setting_fails_closed():
+    from obol_lib import runtime
+
+    def boom(k, d):
+        raise RuntimeError("config unreadable")
+    assert not runtime.command_allowed(boom, {"platform": "cli"})
+
+
+def test_invoices_handler_checks_the_sender_before_anything_else():
+    tree = ast.parse((ROOT / "__init__.py").read_text(encoding="utf-8"))
+    make = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_make_command")
+    handle = next(n for n in make.body if isinstance(n, ast.FunctionDef) and n.name == "handle")
+    first = handle.body[0]
+    assert isinstance(first, ast.If) and "command_allowed" in ast.unparse(first.test)
+    assert "COMMAND_REFUSED" in ast.unparse(first.body[0])
