@@ -74,6 +74,50 @@ def api_key() -> Optional[str]:
     return get_secret(KEY_ENV)
 
 
+LOCAL_PLATFORMS = frozenset({"cli", "tui", "desktop", "local"})
+COMMAND_REFUSED = "Only an approved sender can use this command."
+
+
+def _norm(value: Any) -> str:
+    return str(getattr(value, "value", value) or "").strip().lower()
+
+
+def command_senders(getter: Callable[[str, Any], Any]) -> set[str]:
+    """The ``command_senders`` setting as a set of ``platform:user_id`` (a list or comma-separated text)."""
+    value = getter("command_senders", [])
+    if isinstance(value, str):
+        value = value.split(",")
+    out = set()
+    for item in value if isinstance(value, (list, tuple, set)) else ():
+        platform, sep, user = str(item).strip().partition(":")
+        if sep and platform.strip() and user.strip():
+            out.add(f"{platform.strip().lower()}:{user.strip()}")
+    return out
+
+
+def command_allowed(getter: Callable[[str, Any], Any], context: Mapping[str, Any]) -> bool:
+    """May the caller of ``/invoices`` run it? Open unless ``restrict_commands`` is true. Then a local session may
+    (no source, or a local source, on a local platform), a messaging sender only when listed in ``command_senders``,
+    and a call without calling context never may. An unreadable setting counts as restricted (fails closed)."""
+    try:
+        restricted = getter("restrict_commands", False)
+    except Exception:  # noqa: BLE001
+        return False
+    if restricted is not True and str(restricted).strip().lower() not in ("true", "yes", "on", "1"):
+        return True
+    platform = _norm(context.get("platform"))
+    source = context.get("source")
+    if source is None or _norm(getattr(source, "platform", "")) == "local":
+        return platform in LOCAL_PLATFORMS
+    user = str(getattr(source, "user_id", "") or "").strip()
+    source_platform = _norm(getattr(source, "platform", ""))
+    try:
+        senders = command_senders(getter)
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(user and source_platform) and f"{source_platform}:{user}" in senders
+
+
 def make_client(settings: Settings, key: Optional[str] = None, **kwargs: Any) -> Any:
     if settings.provider == "bank_transfer":
         from .bank_client import BankClient

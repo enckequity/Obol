@@ -261,6 +261,8 @@ _USAGE = ("Usage: /invoices [open|overdue|paid|draft|sync|help]\n"
 
 def _make_command(ctx: Any) -> Callable[..., str]:
     def handle(raw_args: str = "", **kwargs: Any) -> str:
+        if not runtime.command_allowed(ctx.get_config, kwargs):
+            return runtime.COMMAND_REFUSED
         arg = (raw_args or "").strip().lower()
         if arg in ("help", "-h", "--help"):
             return _USAGE
